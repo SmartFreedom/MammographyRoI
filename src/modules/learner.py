@@ -96,21 +96,28 @@ def unfreeze_bn(model):
 
 
 class Learner:
-    def __init__(self, model, loss, opt, metrics=[]):
+    def __init__(self, model, loss, opt, callbacks=[]):
         self.model = model
         self.loss = loss
         self.opt = opt
         if self.opt is not None:
             for group in self.opt.param_groups:
                 group.setdefault('initial_lr', group['lr'])
-        self.metrics = metrics
+        self.callbacks = callbacks
 
     def make_step(self, data, training=False):
         image = torch.autograd.Variable(data['image']).cuda()
-        target = torch.autograd.Variable(data[config.TARGET_NAME]).cuda()
+        inference = config.TARGET_NAME not in data.keys()
 
-        prediction = self.model(image).double()
-        losses = { 'loss': self.loss(prediction, target) }
+        if not inference:
+            target = torch.autograd.Variable(
+                data[config.TARGET_NAME]).cuda()
+
+        prediction = self.model(image).float()
+        if not inference:
+            losses = { 'loss': self.loss(prediction, target.float()) }
+            target = target.data.cpu().numpy()
+
         prediction = torch.sigmoid(
             prediction,
         ).data.cpu().numpy()
@@ -119,12 +126,12 @@ class Learner:
             losses['loss'].backward()
             self.opt.step()
 
-        target = target.data.cpu().numpy()
         image = image.data.cpu().numpy()
         for k, loss in losses.items():
             losses[k] = loss.data.cpu().numpy()
-        for metric in self.metrics:
-            losses.update(metric(prediction, target, data))
+        for callback in self.callbacks:
+            losses.update(callbacks(
+                prediction, target if inference else None, data))
 
         return losses
 
@@ -161,6 +168,16 @@ class Learner:
 
         return meters # metrics.aggregate(meters)
 
+    def inference(self, datagen, callbacks=[]):
+        self.model.eval()
+        self.callbacks = callbacks
+
+        with torch.no_grad():
+            for data in tqdm(datagen):
+                meters.append(self.make_step(data, training=False))
+
+        return meters # metrics.aggregate(meters)        
+
     def infer_on_data(self, data, verbose=True):
         if self.model.training:
             self.model.eval()
@@ -175,12 +192,16 @@ class Learner:
             image = (
                 image * np.array(config.STD) + np.array(config.MEAN))
 
-            fig, ax = plt.subplots(ncols=3, figsize=(15, 5))
-            ax[0].imshow(np.squeeze(image))
+            fig, ax = plt.subplots(nrows=2, ncols=3, figsize=(15, 10))
+            ax[0][0].imshow(np.squeeze(image))
             if not isinstance(data['mask'], np.ndarray):
                 data['mask'] = data['mask'].data.numpy()
-            ax[1].imshow(np.squeeze(data['mask']))
-            cs = ax[2].imshow(np.squeeze(pred[0]))
+            ax[0][1].imshow(np.squeeze(data['mask'])[0])
+            cs = ax[0][2].imshow(np.squeeze(pred[0])[0])
+            if not isinstance(data['mask'], np.ndarray):
+                data['mask'] = data['mask'].data.numpy()
+            ax[1][1].imshow(np.squeeze(data['mask'])[1])
+            cs = ax[1][2].imshow(np.squeeze(pred[0])[1])
             fig.colorbar(cs)
             plt.show()
 
