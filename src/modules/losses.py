@@ -174,3 +174,32 @@ class ConditionalBCE(nn.Module):
         pred = pred.gather(0, idxs).float()
 
         return self.loss(pred, target)
+
+
+class WhetherCentroidPresentedBCE(nn.Module):
+    def __init__(self):
+        super(WhetherCentroidPresentedBCE, self).__init__()
+        self.loss = torch.nn.BCEWithLogitsLoss()
+
+    def forward(self, pred, target):
+        mask = target[:, -1].reshape(shape=(target.size(0), -1)).sum(1)
+        centroid_loss = 0
+        if mask.sum():
+            idxs = torch.nonzero(mask).view(-1)
+            _target = (
+                target[idxs][:, -1:] 
+                - target[idxs][:, -1:] * target[idxs][:, :1])
+            _pred = pred[idxs][:, -1:]
+            centroid_loss = self.loss(_pred, _target)
+
+        tissue_loss = self.loss(pred[:, :1], target[:, :1])
+        target = target.reshape(shape=(target.size(0), target.size(1), -1))
+        roi = 1 - (
+            target[:, -1] - target[:, -1] * target[:, 0]
+        ) * (1 - target[:, 1])
+        idxs = torch.nonzero(roi.reshape(-1)).view(-1)
+        target = target[:, 1].reshape(-1)[idxs]
+        pred = pred[:, 1].reshape(-1)[idxs]
+
+        whole_loss = self.loss(pred, target)
+        return whole_loss + centroid_loss + tissue_loss
