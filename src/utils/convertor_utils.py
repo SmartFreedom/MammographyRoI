@@ -8,6 +8,7 @@ import json
 from PIL import Image
 import pandas as pd
 import easydict
+from collections import defaultdict
 from glob import glob
 import pydicom as dicom
 
@@ -15,14 +16,18 @@ from ..configs import config
 
 
 columns = [
-    'case', 'which_side', 'dcm_filename',
-    'id_segment', 'kalcinaty', 'lokalnaya-perestrojka-struktury-mzh', 
-    'vneochagovie-kalcinaty-2', 'klass-po-bi-rads',
-    'obrazovaniya', 'inorodnye-tela-4', 'path',
-    'pixel_spacing_y', 'pixel_spacing_x', 'rows', 'columns',
+    'case', 'which_side', 'dcm_filename', 'id_segment', 
+    'path', 'pixel_spacing_y', 'pixel_spacing_x', 'rows', 'columns',
     'relative_xray_exposure', 'sensitivity', 'area', 'shape', 'coeff',
     'centroid_y', 'centroid_x', 'size_y', 'size_x', 'points_nb'
 ]
+
+
+def draw_circle(y, x, shape):
+    mask = np.zeros(shape=shape, dtype=np.bool)
+    coords = draw.circle(y[0], x[0], config.NIPPLE_RADIUS, shape=shape)
+    mask[coords] = True
+    return mask
 
 
 def load_row_images(row):
@@ -99,7 +104,7 @@ def to_str(x):
 
 
 def protocol_general(row, case):
-    path = config.PATHS.PNG/case
+    path = config.PATHS.CROPS/case
     shape = Image.open(path/row.filename).size[::-1]
     coeff = max(shape) / max(row.imageHeight, row.imageWidth)
     
@@ -119,28 +124,11 @@ def protocol_general(row, case):
 
 def protocol_mammography(row, case):
     row = protocol_general(row, case)
-    upd_keys = [
-        'kalcinaty', 'lokalnaya-perestrojka-struktury-mzh',
-        'obrazovaniya', 'inorodnye-tela-4', 
-        'vneochagovie-kalcinaty-2', 'klass-po-bi-rads'
-    ]
-    # it's happends that formData might be missed in annotation
-    upd = { k: -2 for k in upd_keys }
-    if 'formData' in row.keys():
-        upd = { 
-            k: (
-                to_str(row.formData[k]) 
-                if row.formData[k] 
-                else '-1'
-            )
-            if k in row.formData.keys() 
-            else '-1' for k in upd_keys 
-        }
-    row.update(upd)
 
     coords = np.array([ [p['y'], p['x']] for p in row.points ])
     if all(coords[-1] == coords[0]) and len(coords) > 1:
         coords = coords[:-1]
+
     coords = row.coeff * np.array(coords)
     size_y, size_x = coords.max(axis=0) - coords.min(axis=0)
     y, x = coords.mean(axis=0)
@@ -194,7 +182,7 @@ def dicom2png(case):
     path_map = { int(dicom.read_file(p).InstanceNumber): p for p in path_map }
 
     for k, v in path_map.items():
-        path = config.PATHS.PNG/case
+        path = config.PATHS.CROPS/case
         os.makedirs(str(path), exist_ok=True)
         name = os.path.basename(v.replace('.dcm', '.png'))
         regexp = re.compile(r"^(?P<prefix>[a-zA-Z]+)([0-9]+)(?P<format>\.[a-z]{0,5})$")
@@ -209,53 +197,44 @@ def dicom2png(case):
     return { case: dcm.shape }
 
 
-class_map = {
-    False: 128, # row.kalcinaty > 1
-    True: 255, # for those which aren't kalcinaty
-}
-def extract_masks(el, row, masks):
+def extract_masks(el, row):
     x = np.array([ v['x'] for v in el.points ])
     y = np.array([ v['y'] for v in el.points ])
 
-    mask = poly2mask(y * row.coeff, x * row.coeff, (row['shape'][0], row['shape'][1]))
-    idx_mask = (el.id + 1) * mask.astype(np.int)
-    class_mask = class_map[
-        (int(row.kalcinaty) > 1) or (int(row['vneochagovie-kalcinaty-2']) > 0)
-    ] * mask.astype(np.int)
+    extractor = poly2mask
+    if el.fieldname == 'centroid-grudnogo-soska':
+        extractor = draw_circle
 
-    masks[el.filename] = {
-        'idx': np.max([idx_mask, masks[el.filename]['idx']], axis=0) 
-            if el.filename in masks.keys() 
-            else idx_mask,
-        'class': np.max([class_mask, masks[el.filename]['class']], axis=0) 
-            if el.filename in masks.keys() 
-            else class_mask,
-    }
+    mask = extractor(
+        y * row.coeff, x * row.coeff, (row['shape'][0], row['shape'][1]))
     row.area = mask.sum()
+    return mask.astype(np.int)
 
 
 def process_annotations_RoI(annot):
     data = pd.DataFrame(columns=columns)
     xml = decode_json(annot.XML)
+    xml += decode_json(annot.XML_x)
 
     if not xml: return None
 
-    masks = {}
-    for el in xml:
-        el = easydict.EasyDict(el)
+    xmls = defaultdict(list)
+    for x in xml:
+        if 'fieldname' not in x.keys(): return None
+        xmls[x['fieldname']].append(x)
 
-        row = protocol_mammography(el, annot['Кейс'])
-        extract_masks(el, row, masks)
-        row = pd.concat([row, annot[config.ANNOTATION_COLUMNS]])
-        data = data.append(row, ignore_index=True)
-
-    for k in masks.keys():
-        path_ = str(os.path.join(row.path, k)).replace('.png', '_{}.png')
-        masks_ = { mtn: cv2.imread(path_.format(mtn), 0) for mtn in masks[k].keys()}
-        cv2.imwrite(path_.format('RoI_mask'), masks[k]['class'])
+    for fieldname, xml in xmls.items():
+        for el in xml:
+            el = easydict.EasyDict(el)
+            row = protocol_mammography(el, annot['Кейс'])
+            mask = extract_masks(el, row)
+            row = pd.concat([row, annot[config.ANNOTATION_COLUMNS]])
+            row.fieldname = fieldname
+            data = data.append(row, ignore_index=True)
+            path = str(os.path.join(row.path, el.filename)).replace('.png', '_{}.png')
+            cv2.imwrite(path.format(fieldname), mask)
 
     return data
-
 
 
 jd = json.JSONDecoder()

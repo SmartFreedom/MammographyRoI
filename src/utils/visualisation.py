@@ -176,3 +176,43 @@ def visualise_pred(data):
         'bboxes': annotation
     }
     visualize_bboxes(tdata, fdata, {0:'', 1:''})
+
+
+def show_segmentations(image, predict):
+    fig, axes = plt.subplots(ncols=2, nrows=3, figsize=(10, 15))
+    fig.tight_layout()
+    axes[0][0].imshow(image)
+    axes[0][0].axis('off')
+    axes[0][1].imshow(predict[1] - predict[0])
+    axes[0][1].axis('off')
+    axes[1][0].imshow(predict[1])
+    axes[1][0].axis('off')
+    axes[1][1].imshow(predict[0])
+    axes[1][1].axis('off')
+    axes[2][0].imshow(predict[2])
+    axes[2][0].axis('off')
+    roi = predict[1] - predict[0]
+    roi[predict[2] > .5] = np.sqrt(roi[predict[2] > .5])
+    axes[2][1].imshow(roi)
+    axes[2][1].axis('off')
+    plt.savefig(str(config.PATHS.LOGS/'segmentations.png'))
+    plt.show()
+
+def show_crops(image, mask, coords):
+    y_min, y_max, x_min, x_max = coords
+    fig, axes = plt.subplots(ncols=2, nrows=1, figsize=(10, 5))
+    fig.tight_layout()
+    axes[0].imshow(image)
+    axes[0].axis('off')
+    a = axes[1].imshow(mask)
+    plt.colorbar(a)
+    axes[1].axis('off')
+    plt.show()
+
+    fig, axes = plt.subplots(ncols=2, nrows=1, figsize=(10, 5))
+    fig.tight_layout()
+    axes[0].imshow(image[y_min: y_max, x_min: x_max])
+    axes[0].axis('off')
+    axes[1].imshow(mask[y_min: y_max, x_min: x_max])
+    axes[1].axis('off')
+    plt.show()
