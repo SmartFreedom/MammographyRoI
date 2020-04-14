@@ -8,49 +8,45 @@ import pandas as pd
 MEAN = [74.77618355029848]
 STD = [31.738553261533994]
 
-BATCH_SIZE = 12
+BATCH_SIZE = 42
 BATCH_SIZE_TEST = 1 #BATCH_SIZE // 3
-CROP_SIDE = 768
+CROP_SIDE = 512
 CNN_SIDE = 512
 BBOXES_SIDE = 50
-DEVICES = [0, 1]
+DEVICES = [0, 1, 2]
 WORKERS_NB = 16
 CUDA_IDX = 0
 CROP_STEP = 256
 SIDE = 512
 DROPOUT = .2
-
-MIN_DIAMETER = 15
-MAX_DIAMETER = 108
-
+NIPPLE_RADIUS = 25
 
 RANDOM_SEED = 42
-DATASET_LEN_MULTIPLIER = 25
-TRAIN_TEST_SPLIT = .8
+DATASET_LEN_MULTIPLIER = 8
+TRAIN_TEST_SPLIT = .9
 
 
 OPT = easydict.EasyDict()
 OPT.MULTIPLIER = .1
-OPT.COEFF = .98
+OPT.COEFF = 1.
 OPT.INIT_LR = 1e-4
-OPT.EPOCHS_PER_SCHEDULER = 16
+OPT.EPOCHS_PER_SCHEDULER = 25
 
 TARGET_NAME = 'mask'
 
 
 PATHS = easydict.EasyDict()
-PATHS.DATA_ROOT = Path('/opt/data2/MG/Medicina/20190715')
-# PATHS.PNG = Path('/opt/data2/user/ezhukov/working_with_mammo/dataset/Medicina_png_resized_sorted_1500_all')
-PATHS.DATA_LOCAL = Path('../data')
+PATHS.DATA_ROOT = Path('/data/datasets/nas/20190715/Medicina')
+PATHS.DATA_LOCAL = Path('/data/datasets/ssd/mammography')
+
 PATHS.PNG = PATHS.DATA_LOCAL/'png'
-PATHS.LOGS = PATHS.DATA_LOCAL/'logs'
+PATHS.LOGS = PATHS.DATA_LOCAL/'roi_segmentation'/'logs'
 PATHS.CSV = PATHS.DATA_LOCAL/'csv'
-PATHS.EXPERIMENT_DATA = PATHS.DATA_LOCAL/'experiment_1'
-
-
+PATHS.CROPS = PATHS.DATA_LOCAL/'roi_segmentation'/'crops'
+PATHS.EXPERIMENT_DATA = PATHS.DATA_LOCAL/'roi_segmentation'
 
 ANNOTATIONS = [
-    pd.read_csv(PATHS.CSV/'export_mammography-02-shape.csv'),
+        pd.read_csv(PATHS.CSV/'export_last.csv'),
 ]
 ANNOTATIONS = pd.concat(ANNOTATIONS, sort=False).reset_index(drop=True)
 ANNOTATORS_ORDER = pickle.load(open(PATHS.CSV/'annotators_order.pkl', 'rb'))
