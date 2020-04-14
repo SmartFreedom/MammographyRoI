@@ -7,6 +7,7 @@ from albumentations import (
 )
 
 import cv2
+import numpy as np
 
 from ..configs import config
 
@@ -115,3 +116,43 @@ class TestAugmentation(Augmentation):
             transformations,
             keypoint_params={'format': 'yx'}
         )
+
+def _rotate_mirror_do(im):
+    """
+    Duplicate an np array (image) of shape (x, y, nb_channels) 8 times, in order
+    to have all the possible rotations and mirrors of that image that fits the
+    possible 90 degrees rotations.
+    It is the D_4 (D4) Dihedral group:
+    https://en.wikipedia.org/wiki/Dihedral_group
+    """
+    mirrs = []
+    mirrs.append(np.array(im))
+    mirrs.append(np.rot90(np.array(im), axes=(-2, -1), k=1))
+    mirrs.append(np.rot90(np.array(im), axes=(-2, -1), k=2))
+    mirrs.append(np.rot90(np.array(im), axes=(-2, -1), k=3))
+    im = np.array(im)[..., ::-1]
+    mirrs.append(np.array(im))
+    mirrs.append(np.rot90(np.array(im), axes=(-2, -1), k=1))
+    mirrs.append(np.rot90(np.array(im), axes=(-2, -1), k=2))
+    mirrs.append(np.rot90(np.array(im), axes=(-2, -1), k=3))
+    return mirrs
+
+
+def _rotate_mirror_undo(im_mirrs):
+    """
+    merges a list of 8 np arrays (images) of shape (x, y, nb_channels) generated
+    from the `_rotate_mirror_do` function. Each images might have changed and
+    merging them implies to rotated them back in order and average things out.
+    It is the D_4 (D4) Dihedral group:
+    https://en.wikipedia.org/wiki/Dihedral_group
+    """
+    origs = []
+    origs.append(np.array(im_mirrs[0]))
+    origs.append(np.rot90(np.array(im_mirrs[1]), axes=(-2, -1), k=3))
+    origs.append(np.rot90(np.array(im_mirrs[2]), axes=(-2, -1), k=2))
+    origs.append(np.rot90(np.array(im_mirrs[3]), axes=(-2, -1), k=1))
+    origs.append(np.array(im_mirrs[4])[..., ::-1])
+    origs.append(np.rot90(np.array(im_mirrs[5]), axes=(-2, -1), k=3)[:, :, ::-1])
+    origs.append(np.rot90(np.array(im_mirrs[6]), axes=(-2, -1), k=2)[:, :, ::-1])
+    origs.append(np.rot90(np.array(im_mirrs[7]), axes=(-2, -1), k=1)[:, :, ::-1])
+    return np.stack(origs).prod(axis=0) ** (1 / len(origs))
