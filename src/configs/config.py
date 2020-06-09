@@ -12,8 +12,9 @@ BATCH_SIZE = 42
 BATCH_SIZE_TEST = 1 #BATCH_SIZE // 3
 CROP_SIDE = 512
 CNN_SIDE = 512
+MIN_SIDE = 512
 BBOXES_SIDE = 50
-DEVICES = [0, 1, 2]
+DEVICES = [0]
 WORKERS_NB = 16
 CUDA_IDX = 0
 CROP_STEP = 256
@@ -39,7 +40,7 @@ PATHS = easydict.EasyDict()
 PATHS.DATA_ROOT = Path('/data/datasets/nas/20190715/Medicina')
 PATHS.DATA_LOCAL = Path('/data/datasets/ssd/mammography')
 
-PATHS.PNG = PATHS.DATA_LOCAL/'png'
+PATHS.PNG = Path('/data/datasets/hdd/mammography/png')
 PATHS.LOGS = PATHS.DATA_LOCAL/'roi_segmentation'/'logs'
 PATHS.CSV = PATHS.DATA_LOCAL/'csv'
 PATHS.CROPS = PATHS.DATA_LOCAL/'roi_segmentation'/'crops'
@@ -201,3 +202,21 @@ PROTOCOL = {
         "options": []
     }
 }
+
+
+API.REDIS = easydict.EasyDict()
+API.REDIS.HOST = '10.20.12.13'
+API.REDIS.PORT = 6379
+API.REDIS.DB = 3
+API.REDIS.I_CHANNEL = 'requests.mammography_screening.*'
+API.REDIS.O_CHANNEL = 'analyse_result.{case_id}'
+API.REDIS.START = 1
+API.KEYS = [ 'MammographyRoI', 'MammographyDencity' ]
+
+API.MAX_QUEUE_LENGTH = 5
+API.TTL = 1
+
+
+PROCESS = easydict.EasyDict()
+PROCESS.RoI = easydict.EasyDict()
+PROCESS.RoI.CROP_SIDE = 512
