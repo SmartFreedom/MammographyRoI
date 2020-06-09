@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import ToTensor, Normalize, Compose
 
 from ..configs import config
+from ..utils import convertor_utils as cus
 from ..modules import augmentations as augs
 
 
@@ -39,7 +40,7 @@ def collater(data):
 
 def infer_on_batch(model, data):
     batch = [data['image']]
-    if np.array(data['shape']).max() > 1000:
+    if np.array(data['shape']).max() > 800:
         batch = [ torch.unsqueeze(d, 0) for d in data['image'] ]
 
     torch.cuda.empty_cache()
@@ -54,8 +55,9 @@ def infer_on_batch(model, data):
 
 
 def inference_collater(data):
-    pids = [ pid for s in data for pid in [ s['pid']] * 8 ]
-    shapes = [ pid for s in data for pid in [ s['shape']] * 8 ]
+    pids = [ pid for s in data for pid in [s['pid']] * 8 ]
+    sides = [ side for s in data for side in [s['side']] * 8 ]
+    shapes = [ pid for s in data for pid in [s['shape']] * 8 ]
     imgs = [ s['image'] for s in data ]
     _shapes = np.array([ s.shape[1:] for s in imgs ])
     max_shape = _shapes.max() 
@@ -73,7 +75,7 @@ def inference_collater(data):
         torch.Tensor(im.copy())
         for s in imgs for im in augs._rotate_mirror_do(s) ])
     
-    return { 'image': imgs, 'pid': pids, 'shape': shapes }
+    return { 'image': imgs, 'pid': pids, 'shape': shapes, 'side': sides }
 
 
 def stack_aug_collater(data):
@@ -167,13 +169,15 @@ class SegmentationDataset(Dataset):
 class InferenceDataset(Dataset):
     def __init__(self, keys, root=config.PATHS.EXPERIMENT_DATA):
         # key == case/fileid
-        self.keys = keys
+        self.keys_dict = keys
+        self.keys = list(keys.keys())
         self.root = root
 
     def __getitem__(self, idx):
         fileid = self.keys[idx]
         image = self.load_image(fileid)
         data = { 
+            "side": self.keys_dict[self.keys[idx]],
             "image": image, 
             "pid": fileid, 
             "shape": image.shape 
@@ -186,10 +190,41 @@ class InferenceDataset(Dataset):
         return data
 
     def load_image(self, fileid):
-        return cv2.imread(os.path.join(self.root, fileid), 0)
+        side = cv2.imread(os.path.join(self.root, fileid), 0)
+        shape = np.array(side.shape)[:2]
+        shape_ = (shape * (config.SIDE / shape.min())).astype(np.int)
+        return cv2.resize(side, tuple(shape_[::-1].tolist()))
 
     def __len__(self):
         return len(self.keys)
+
+
+# class InferenceDataset(Dataset):
+#     def __init__(self, keys, root=config.PATHS.EXPERIMENT_DATA):
+#         # key == case/fileid
+#         self.keys = keys
+#         self.root = root
+
+#     def __getitem__(self, idx):
+#         fileid = self.keys[idx]
+#         image = self.load_image(fileid)
+#         data = { 
+#             "image": image, 
+#             "pid": fileid, 
+#             "shape": image.shape 
+#         }
+#         return self.postprocess(data)
+
+#     def postprocess(self, data):
+#         data = easydict.EasyDict(data)
+#         data.image = img_transform(np.expand_dims(data.image, -1))
+#         return data
+
+#     def load_image(self, fileid):
+#         return cv2.imread(os.path.join(self.root, fileid), 0)
+
+#     def __len__(self):
+#         return len(self.keys)
 
 
 class ExtendedSampler(Sampler):
