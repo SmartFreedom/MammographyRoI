@@ -30,6 +30,16 @@ def draw_circle(y, x, shape):
     return mask
 
 
+def build_path(path, root, template='case_{}-side_{}.png', replace=True):
+    fname = os.path.basename(path)
+    side = int(re.findall(config.NUM_REGEX, fname)[0])
+    case = os.path.basename(os.path.dirname(path))
+    path = os.path.join(root, template.format(case, side))
+    if replace:
+        path = path.replace('.png', '_{}.png')
+    return path
+
+
 def load_row_images(row):
     case = row['Кейс']
     path = (case.split('_')[0], case)
