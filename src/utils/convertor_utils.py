@@ -4,6 +4,8 @@ import re
 import os
 import cv2
 import scipy
+import scipy.stats
+import sklearn.mixture
 import json
 from PIL import Image
 import pandas as pd
@@ -21,6 +23,56 @@ columns = [
     'relative_xray_exposure', 'sensitivity', 'area', 'shape', 'coeff',
     'centroid_y', 'centroid_x', 'size_y', 'size_x', 'points_nb'
 ]
+
+
+def convert_and_unify(troot, file):
+    try:
+        src = os.path.join(troot, file)
+        dcm = dicom.read_file(src)
+        instance_n = int(dcm.InstanceNumber) % 10
+        dst = os.path.join(troot, 'a%05d.png' % instance_n)
+        
+        image = dcm.pixel_array.copy()
+
+        median = np.median(image)
+        c1 = (image == median).sum() / (image == median + 1).sum() ** .5
+        c2 = (image == median).sum() / (image == median - 1).sum() ** .5
+
+        # if min(c1, c2) > 10:
+        try:
+            GM = sklearn.mixture.GaussianMixture(
+                n_components=2, 
+                covariance_type='spherical')
+            GM.fit(image.flatten().reshape((-1, 1)))
+            image_mean = GM.means_[np.argmax(GM.covariances_)]
+            back_mean = GM.means_[np.argmin(GM.covariances_)]
+            image_std = np.sqrt(GM.covariances_).max()
+        except:
+            GM = sklearn.mixture.GaussianMixture(
+            n_components=1, 
+            covariance_type='spherical')
+            GM.fit(image[image != median].reshape((-1, 1)))
+            image_mean = GM.means_[np.argmax(GM.covariances_)]
+            image_std = np.sqrt(GM.covariances_).max()
+            back_mean = median
+
+        mid = 2 ** 8 if image.dtype == np.uint8 else 2 ** 16
+        if back_mean > image_mean:
+            image = mid - 1 - image
+            image_mean = mid - 1 - image_mean
+
+        if image.dtype != np.uint8:
+            image = np.clip(
+                image, 
+                image_mean - image_std * 1, 
+                image_mean + image_std * 5)
+            image = (image - image.min()) / (image.max() - image.min())
+            image = (image * 255).astype(np.uint8)
+
+        cv2.imwrite(dst, image)
+        return { src: dst }
+    except dicom.errors.InvalidDicomError:
+        return None
 
 
 def draw_circle(y, x, shape):
