@@ -211,6 +211,17 @@ def extract_masks(el, row):
     return mask.astype(np.int)
 
 
+def resize_image(image, interpolation=2, side=config.MIN_SIDE):
+    if side is None:
+        return image
+    if image is None:
+        return None
+    shape = np.array(image.shape)[:2]
+    shape_ = (shape * (side / shape.min())).astype(np.int)
+    return cv2.resize(
+        image, tuple(shape_[::-1].tolist()), interpolation=interpolation)
+
+
 def process_annotations_RoI(annot):
     data = pd.DataFrame(columns=columns)
     xml = decode_json(annot.XML)
