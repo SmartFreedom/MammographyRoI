@@ -5,6 +5,7 @@ import os
 import cv2
 import scipy
 import scipy.stats
+import scipy.ndimage
 import sklearn.mixture
 import json
 from PIL import Image
@@ -305,7 +306,9 @@ def process_annotations_RoI(annot):
             row.fieldname = fieldname
             data = data.append(row, ignore_index=True)
             path = str(os.path.join(row.path, el.filename)).replace('.png', '_{}.png')
-            cv2.imwrite(path.format(fieldname), mask)
+            if fieldname == 'segmentaciya-zhelez':
+                mask = scipy.ndimage.binary_dilation(mask, iterations=2)
+            cv2.imwrite(path.format(fieldname), mask.astype(np.uint8))
 
     return data
 
