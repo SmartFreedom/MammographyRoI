@@ -6,10 +6,43 @@ from albumentations import (
     RandomCrop, CenterCrop
 )
 
+from albumentations.core.transforms_interface import ImageOnlyTransform
+
 import cv2
 import numpy as np
 
 from ..configs import config
+
+
+class IntensityWindowShift(ImageOnlyTransform):
+    def __init__(self, center=(0., 1.), always_apply=False, p=0.5):
+        super(IntensityWindowShift, self).__init__(always_apply, p)
+        self.center = center
+
+    def apply(self, img, center=.5, random_state=None, **params):
+        return intensity_window_shift(
+            img, center, np.random.RandomState(random_state))
+
+    def get_params(self):
+        return {
+            "center": np.random.uniform(self.center[0], self.center[1]),
+            "random_state": np.random.randint(0, 65536),
+        }
+
+    def get_transform_init_args_names(self):
+        return ("center")
+
+
+def intensity_window_shift(image, center=1., random_state=None, **kwargs):
+    if image.dtype != np.uint8:
+        raise TypeError("Image must have uint8 channel type")
+
+    if random_state is None:
+        random_state = np.random.RandomState(42)
+
+    image = (image.astype(np.float) / 2 ** 8 ) ** center
+    image = (2 ** 8 - 1) * (image - image.min()) / (image.max() - image.min())
+    return image.astype(np.uint8)
 
 
 class Augmentation:
@@ -50,7 +83,7 @@ class Augmentation:
                 RandomContrast(),
                 RandomBrightness(),
             ], p=.8),
-        ], p=0.95)
+        ], p=1.)
 
     def get_geoometric(self):
         geometric = [
@@ -59,7 +92,7 @@ class Augmentation:
                 scale_limit=(-.1, .4), 
                 rotate_limit=45, 
                 border_mode=0,
-                p=.95
+                p=1.
             ),
         ]
         return Compose(geometric)
@@ -72,11 +105,13 @@ class Augmentation:
             Compose([
                 Flip(),
                 RandomRotate90(),
+                IntensityWindowShift(center=(.1, 1.2), p=1.),
+                InvertImg(),
             ], p=1.),
             Compose([
                 self.get_photometric(),
                 self.get_geoometric(),
-            ], p=.95),
+            ], p=1.),
             RandomCrop(config.CNN_SIDE, config.CNN_SIDE, always_apply=True)
         ]
         return Compose(
